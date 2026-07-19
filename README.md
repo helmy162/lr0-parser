@@ -1,69 +1,62 @@
-# Getting Started with Create React App
+# LR(0) Parser
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+An interactive tool that **builds an LR(0) parser step by step**, so students can *see* how a
+context-free grammar becomes a DFA and a parsing table, and watch a sentence being parsed on the
+stack. Live at **[lr0parser.com](https://lr0parser.com)**.
 
-## Available Scripts
+Most parser generators just print the answer. This one walks through the construction the way a
+compilers course teaches it, with a plain-language explanation at every phase.
 
-In the project directory, you can run:
+## Features
 
-### `npm start`
+- **Six guided phases:** grammar, augment & number, LR(0) item sets, DFA, parsing table, and parse a
+  sentence. Jump to any phase from the sticky rail, or scroll straight through.
+- **Closure & GOTO, made visible.** Each item set shows its kernel vs. closure items and where every
+  symbol transitions next.
+- **Interactive DFA.** The item sets are rendered as a pannable automaton with zoom controls; click a
+  state to inspect its item set.
+- **Colour-coded ACTION/GOTO table** so shift, reduce, accept, and go-to each read at a glance.
+- **Conflict detection.** When a grammar isn't LR(0), the clashing cells are flagged and explained
+  instead of being silently overwritten.
+- **Step-through parsing.** Run a string and step, play, or skip through the stack trace.
+- **Quick by default, step-by-step on demand.** The default view shows the full result at once; one
+  button reveals a guided walkthrough with explanations at every phase.
+- **Light & dark themes**, responsive, keyboard-accessible.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Grammar format
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+- The first line is the start non-terminal on its own.
+- One production per line, e.g. `A->(AB)`.
+- Every character is its own symbol. Non-terminals are `A` to `Z`, everything else is a terminal. Don't
+  separate symbols with spaces.
+- Don't add the end-of-input marker `$` or the augmented rule; the tool adds them for you.
 
-### `npm test`
+```
+S
+S->A
+A->(AB)
+A->()
+B->(A)
+B->()
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Tech
 
-### `npm run build`
+React (Create React App). The parsing engine lives in [`src/lib`](src/lib) as pure, framework-free
+functions (`grammar`, `itemsets`, `table`, `parse`) covered by unit tests; the UI in
+[`src/components`](src/components) renders that data as real components. Theming is driven by CSS custom
+properties. The DFA is drawn with [`react-graph-vis`](https://github.com/crubier/react-graph-vis).
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Local development
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```bash
+npm install
+npm start      # http://localhost:3000
+npm test       # run the parsing-engine tests
+npm run build  # production build
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Credit
 
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Built by [Mohamed Abdelmaksoud](https://www.linkedin.com/in/helmy16/). If it helped you, you can
+[buy me a coffee](https://www.buymeacoffee.com/helmy16).

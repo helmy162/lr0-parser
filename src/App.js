@@ -1,204 +1,208 @@
-import React, { useState, useEffect } from "react";
-import GrammarInput from "./components/GrammarInput";
-import DFAOutput from "./components/DFAOutput";
-import SentenceInput from "./components/SentenceInput";
-import {
-  getItems,
-  getDfaOutput,
-  getLrPraseTable,
-  formatLrPraseTable,
-} from "./utils/LR0";
-import { getParseOutput } from "./utils/parser";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import TagManager from "react-gtm-module";
-import SentenceOutput from "./components/SentenceOutput";
-import DFAVisualization from "./components/DFAVisualization";
 import { SpeedInsights } from "@vercel/speed-insights/react";
-import { Analytics } from "@vercel/analytics/react"
+import { Analytics } from "@vercel/analytics/react";
+import { analyzeGrammar, parseSentence } from "./lib";
+import AppHeader from "./components/AppHeader";
+import ProgressRail from "./components/ProgressRail";
+import GrammarStage from "./components/GrammarStage";
+import ResultStages from "./components/ResultStages";
+import StepsCallout from "./components/StepsCallout";
+import LearnBar from "./components/LearnBar";
+import LegalPage from "./components/LegalPage";
+import AppFooter from "./components/AppFooter";
+import "./App.css";
 
-const App = () => {
-  const [grammar, setGrammar] = useState(
-    `S\nS->A\nA->(AB)\nA->()\nB->(A)\nB->()`
-  );
-  const [dfaOutput, setDfaOutput] = useState("");
-  const [dfaResult, setDfaResult] = useState("");
-  const [lrParseTable, setLrParseTable] = useState("");
-  const [lrParseTableRaw, setlrParseTableRaw] = useState("");
+const DEFAULT_GRAMMAR = "S\nS->A\nA->(AB)\nA->()\nB->(A)\nB->()";
+const VIEW_PATHS = { learn: "/steps", terms: "/terms", privacy: "/privacy" };
+const PATH_VIEWS = { "/steps": "learn", "/terms": "terms", "/privacy": "privacy" };
+const VIEW_TITLES = {
+  quick: "LR(0) Parser: Visualize LR(0) parsing step by step",
+  learn: "Step-by-step LR(0) walkthrough · LR(0) Parser",
+  terms: "Terms & Conditions · LR(0) Parser",
+  privacy: "Privacy Policy · LR(0) Parser",
+};
+const SECTION_IDS = ["grammar", "augment", "items", "dfa", "table", "parse"];
+const QUICK_STEPS = [
+  { id: "grammar", label: "Grammar" },
+  { id: "augment", label: "Augment" },
+  { id: "items", label: "Item sets" },
+  { id: "dfa", label: "DFA" },
+  { id: "table", label: "Table" },
+  { id: "parse", label: "Parse" },
+];
+const LEARN_STEPS = QUICK_STEPS.slice(1);
+
+function pathToView(pathname) {
+  const clean = pathname.replace(/\/+$/, "") || "/";
+  return PATH_VIEWS[clean] || "quick";
+}
+
+function scrollToSection(id) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const top = element.getBoundingClientRect().top + window.scrollY - 64;
+  window.scrollTo({ top, behavior: reduced ? "auto" : "smooth" });
+}
+
+export default function App() {
+  const [grammarText, setGrammarText] = useState(DEFAULT_GRAMMAR);
+  const [result, setResult] = useState(null);
   const [sentence, setSentence] = useState("");
-  const [praseSentence, setPraseSentence] = useState("");
+  const [parseResult, setParseResult] = useState(null);
+  const [view, setView] = useState(() => pathToView(window.location.pathname));
+  const [activeSection, setActiveSection] = useState("grammar");
+  const [generateTick, setGenerateTick] = useState(0);
+  const pendingScroll = useRef(false);
+  const pendingScrollTop = useRef(false);
 
-  const [LR0Items, setLR0Items] = useState({
-    productions: [],
-    aug_productions: [[]],
-    symbols: [],
-  });
+  const showResults = result !== null && result.grammar.errors.length === 0 && result.table !== null;
+  const grammarErrors = result?.grammar.errors ?? [];
+
+  const learnFallback = useMemo(
+    () => (view === "learn" && !result?.table ? analyzeGrammar(grammarText) : null),
+    [view, result, grammarText]
+  );
+  const learnResult = result?.table ? result : learnFallback;
+  const learnReady = view === "learn" && learnResult?.table != null;
 
   useEffect(() => {
     TagManager.initialize({ gtmId: "GTM-K3WB5RH" });
   }, []);
 
   useEffect(() => {
-    if (grammar) initLR0Items();
-  }, [grammar]);
+    const onPopState = () => setView(pathToView(window.location.pathname));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
-  function initLR0Items() {
-    const productions = grammar.split("\n");
+  const navigate = useCallback((nextView) => {
+    const path = VIEW_PATHS[nextView] || "/";
+    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+    pendingScrollTop.current = true;
+    setView(nextView);
+  }, []);
 
-    const aug_productions = [[productions[0] + "'", productions[0]]];
-    const regex = /([A-Z])->(.*)/;
-    for (let i = 1; i < productions.length; i++) {
-      const m = regex.exec(productions[i]);
-      if (m) aug_productions.push([m[1], m[2]]);
-    }
+  useLayoutEffect(() => {
+    if (!pendingScrollTop.current) return;
+    pendingScrollTop.current = false;
+    window.scrollTo(0, 0);
+  }, [view]);
 
-    const symbols = createListOfSymbols(aug_productions);
-    symbols.sort();
+  useEffect(() => {
+    document.title = VIEW_TITLES[view] || VIEW_TITLES.quick;
+  }, [view]);
 
-    setLR0Items({
-      productions,
-      aug_productions,
-      symbols,
-    });
-  }
+  const generate = useCallback(() => {
+    setResult(analyzeGrammar(grammarText));
+    setParseResult(null);
+    pendingScroll.current = true;
+    setGenerateTick((tick) => tick + 1);
+  }, [grammarText]);
 
-  function createListOfSymbols(aug_productions) {
-    const symbols = [];
-    for (let i = 0; i < aug_productions.length; i++) {
-      for (let j = 0; j < aug_productions[i][1].length; j++) {
-        const char = aug_productions[i][1].charAt(j);
-        if (
-          char !== "·" &&
-          char !== LR0Items.productions[0] + "'" &&
-          symbols.indexOf(char) === -1
-        ) {
-          symbols.push(char);
-        }
-      }
-    }
-    return symbols;
-  }
+  const resetGrammar = useCallback(() => {
+    setGrammarText(DEFAULT_GRAMMAR);
+    setResult(null);
+    setParseResult(null);
+  }, []);
 
-  function getAugmentedGrammar() {
-    let grammar = "Augmented Grammar\n-----------------\n";
-    const array = LR0Items.aug_productions;
-    console.log(LR0Items);
-    for (let i = 0; i < array.length; i++) {
-      grammar += array[i][0] + "->" + array[i][1] + "\n";
-    }
-    return grammar;
-  }
+  const runParse = useCallback(() => {
+    const active = result?.table ? result : learnResult;
+    if (!active?.table) return;
+    setParseResult(parseSentence(sentence, active.grammar, active.table.rows));
+  }, [result, learnResult, sentence]);
 
-  const handleGrammarSubmit = (grammar) => {
-    initLR0Items(LR0Items, grammar);
-    var grammer = getAugmentedGrammar(LR0Items);
-    var resultItems = getItems(LR0Items);
-    var dfaOutput = getDfaOutput(resultItems);
-    var lrPraseTable = getLrPraseTable(resultItems, LR0Items);
-    setlrParseTableRaw(lrPraseTable);
-    var lrPraseTableString = formatLrPraseTable(lrPraseTable, LR0Items);
-    setDfaResult(resultItems);
-    setDfaOutput(dfaOutput);
-    setLrParseTable(lrPraseTableString);
-  };
+  useEffect(() => {
+    if (!pendingScroll.current) return;
+    pendingScroll.current = false;
+    scrollToSection(showResults ? "augment" : "grammar");
+  }, [generateTick, showResults]);
 
-  const handleSentenceSubmit = (sentence) => {
-    if (!lrParseTable) {
-      alert("Please enter a valid grammar first!");
-      return;
-    }
-    const praseSentenceOutput = getParseOutput(
-      sentence,
-      lrParseTableRaw,
-      LR0Items.aug_productions
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((entry) => entry.isIntersecting);
+        if (visible.length === 0) return;
+        visible.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        setActiveSection(visible[0].target.id);
+      },
+      { rootMargin: "-45% 0px -50% 0px" }
     );
-    setPraseSentence(praseSentenceOutput);
-  };
+    SECTION_IDS.forEach((id) => {
+      const element = document.getElementById(id);
+      if (element) observer.observe(element);
+    });
+    return () => observer.disconnect();
+  }, [view, showResults, learnReady]);
+
+  const isLegal = view === "terms" || view === "privacy";
 
   return (
-    <>
-      <div className="container">
-        <header className="header">
-          <img
-            src="./logo.png"
-            alt="LR(0) Parser"
-            className="title"
-            width="250"
-            height="110"
-          />
-          <h3>Description</h3>
-          <p className="description">
-            LR(0) Parser is a tool that visualizes the DFA and LR(0) table,
-            making it easy to understand the parsing process. Create and analyze
-            LR(0) items, explore augmented grammars, and generate parse tables
-            effortlessly.
-          </p>
-        </header>
-        <main className="main">
-          <GrammarInput
-            onSubmit={handleGrammarSubmit}
-            grammar={grammar}
-            setGrammar={setGrammar}
-          />
-          {dfaResult && <DFAVisualization dfaObject={dfaResult} />}
-          <DFAOutput dfaOutput={dfaOutput} lrParseTable={lrParseTable} />
-          {dfaOutput && (
-            <>
-              {" "}
-              <hr className="divider" />{" "}
-              <SentenceInput
-                onParse={handleSentenceSubmit}
+    <div className="app">
+      <AppHeader onHome={() => navigate("quick")} />
+
+      {isLegal ? (
+        <LegalPage type={view} onHome={() => navigate("quick")} />
+      ) : view === "learn" ? (
+        <>
+          <LearnBar onBack={() => navigate("quick")} />
+          {learnReady && <ProgressRail active={activeSection} steps={LEARN_STEPS} />}
+          <main className="app-main">
+            {learnReady ? (
+              <ResultStages
+                result={learnResult}
+                mode="learn"
+                showExplanations
                 sentence={sentence}
-                setSentence={setSentence}
-              />{" "}
-            </>
-          )}
-          <SentenceOutput praseSentence={praseSentence} />
-        </main>
-        <div className="instruction-section">
-          <h3>Instructions</h3>
-          <ol>
-            <li>The first line shall contain the start non-terminal only. </li>
-            <li>Separate production rule with a new line.</li>
-            <li>DO NOT separate tokens with whitespaces.</li>
-            <li>DO NOT ADD the end-of-input symbol ($). </li>
-            <li>DO NOT add augmented grammar. </li>
-          </ol>
-        </div>
-        <footer className="footer">
-          <div className="terms">
-            <a
-              href="https://www.privacypolicyonline.com/live.php?token=NfmLYvy6ESw7UEthlnJmtWeFYLYx61Kd"
-              target="__blank"
-            >
-              {" "}
-              Terms and Conditions{" "}
-            </a>
-            <a
-              href="https://www.privacypolicyonline.com/live.php?token=EVvnVZTIhZ4P36LloGH3L5FRWuFrqh1Q"
-              target="__blank"
-            >
-              {" "}
-              Privacy Policy{" "}
-            </a>
-          </div>
-          <p>
-            &copy;2023 Made with ❤️ by{" "}
-            <a href="https://www.linkedin.com/in/helmy16/" target="_blank">
-              {" "}
-              Mohamed Abdelmaksoud
-            </a>
-          </p>
-          <div style={{ width: "100%" }}>
-            Found this helpful ? Support me by{" "}
-            <a href="https://www.buymeacoffee.com/helmy16" target="_blank">
-              Buying me a coffee
-            </a>
-          </div>
-        </footer>
-      </div>
+                onSentenceChange={setSentence}
+                onParse={runParse}
+                parseResult={parseResult}
+                stepOffset={-1}
+              />
+            ) : (
+              <div className="callout callout-error" role="alert" style={{ marginTop: 32 }}>
+                <strong>Generate a table first.</strong>
+                <p>
+                  Head back to the main view, enter a grammar, and choose “Show step-by-step explanation”.
+                </p>
+              </div>
+            )}
+          </main>
+        </>
+      ) : (
+        <>
+          {showResults && <ProgressRail active={activeSection} steps={QUICK_STEPS} />}
+          <main className="app-main">
+            <GrammarStage
+              value={grammarText}
+              onChange={setGrammarText}
+              onGenerate={generate}
+              onReset={resetGrammar}
+              errors={grammarErrors}
+            />
+
+            {showResults && (
+              <>
+                <StepsCallout onOpen={() => navigate("learn")} />
+                <ResultStages
+                  result={result}
+                  mode="quick"
+                  showExplanations={false}
+                  sentence={sentence}
+                  onSentenceChange={setSentence}
+                  onParse={runParse}
+                  parseResult={parseResult}
+                />
+              </>
+            )}
+          </main>
+        </>
+      )}
+
+      <AppFooter onNavigate={navigate} />
       <SpeedInsights />
       <Analytics />
-    </>
+    </div>
   );
-};
-
-export default App;
+}
